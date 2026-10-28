@@ -149,7 +149,7 @@ export default function ChatArea({
         const fetchHistory = async () => {
             setLoading(true);
             try {
-                const res = await fetch(`https://opentl-backend-1.onrender.com/api/messages/${channelId}`, {
+                const res = await fetch(`https://opentl-backend-hj2y.onrender.com/api/messages/${channelId}`, {
                     headers: { Authorization: `Bearer ${user.token}` },
                 });
                 if (res.ok) setMessages(await res.json());
@@ -160,7 +160,7 @@ export default function ChatArea({
         fetchHistory();
 
         // ✅ Use env var — critical for Vercel production build
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://opentl-backend-1.onrender.com";
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://opentl-backend-hj2y.onrender.com";
         socketRef.current = io(backendUrl, {
             transports: ["websocket"], // 🔥 VERY IMPORTANT: force WebSocket to avoid Render polling issues
             withCredentials: true,
@@ -248,7 +248,7 @@ export default function ChatArea({
 
         try {
             // ✅ 3. Save to DB
-            const res = await fetch("https://opentl-backend-1.onrender.com/api/messages", {
+            const res = await fetch("https://opentl-backend-hj2y.onrender.com/api/messages", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${user.token}` },
                 body: JSON.stringify({ content, serverId, channelId }),
@@ -325,7 +325,7 @@ export default function ChatArea({
     const handleDeleteMessage = async (messageId: string, channelId: string) => {
         setDeleteConfirmId(null);
         try {
-            const res = await fetch(`https://opentl-backend-1.onrender.com/api/messages/${messageId}`, {
+            const res = await fetch(`https://opentl-backend-hj2y.onrender.com/api/messages/${messageId}`, {
                 method: "DELETE",
                 headers: { Authorization: `Bearer ${user!.token}` },
             });

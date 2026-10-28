@@ -1,5 +1,5 @@
 // Production API configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://opentl-backend-1.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://opentl-backend-hj2y.onrender.com';
 
 export const api = {
     base: API_BASE_URL,

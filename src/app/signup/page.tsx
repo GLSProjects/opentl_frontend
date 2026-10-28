@@ -30,7 +30,7 @@ function SignupPageContent() {
     setLoading(true);
 
     try {
-      const res = await fetch("https://opentl-backend-1.onrender.com/api/auth/register", {
+      const res = await fetch("https://opentl-backend-hj2y.onrender.com/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: name, email, password }),

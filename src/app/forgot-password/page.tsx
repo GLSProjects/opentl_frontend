@@ -18,7 +18,7 @@ export default function ForgotPasswordPage() {
         setError("");
 
         try {
-            const response = await fetch("https://opentl-backend-1.onrender.com/api/auth/forgot-password", {
+            const response = await fetch("https://opentl-backend-hj2y.onrender.com/api/auth/forgot-password", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

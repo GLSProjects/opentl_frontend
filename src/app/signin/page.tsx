@@ -65,7 +65,7 @@ function LoginPageContent() {
     setLoading(true);
 
     try {
-      const res = await fetch("https://opentl-backend-1.onrender.com/api/auth/login", {
+      const res = await fetch("https://opentl-backend-hj2y.onrender.com/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

@@ -61,7 +61,7 @@ export default function ChatbotPage() {
     textareaRef.current?.focus();
 
     try {
-      const response = await fetch("https://opentl-backend-1.onrender.com/api/chatbot", {
+      const response = await fetch("https://opentl-backend-hj2y.onrender.com/api/chatbot", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

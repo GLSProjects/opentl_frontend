@@ -28,7 +28,7 @@ type UseMeetingReturn = {
     getActiveRooms: () => Promise<any[]>;
 };
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://opentl-backend-1.onrender.com';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://opentl-backend-hj2y.onrender.com';
 
 const RTC_CONFIG: RTCConfiguration = {
     iceServers: [

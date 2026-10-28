@@ -31,7 +31,7 @@ export default function ResetPasswordPage({ params }: { params: Promise<{ token:
         setError("");
 
         try {
-            const response = await fetch(`https://opentl-backend-1.onrender.com/api/auth/reset-password/${token}`, {
+            const response = await fetch(`https://opentl-backend-hj2y.onrender.com/api/auth/reset-password/${token}`, {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
