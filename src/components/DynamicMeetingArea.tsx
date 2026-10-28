@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, Copy, Loader2 } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Users, Copy, Loader2, AlertCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMeeting } from "@/hooks/useMeeting";
 
@@ -12,7 +12,21 @@ type MeetingAreaProps = {
 };
 
 export default function DynamicMeetingArea({ roomId, userName: propUserName, onEnd }: MeetingAreaProps) {
-    const { participants, localStream, isMuted, isVideoOff, isConnected, error, joinMeeting, leaveMeeting, toggleMute, toggleVideo } = useMeeting();
+    const { 
+        participants, 
+        localStream, 
+        isMuted, 
+        isVideoOff, 
+        isConnected, 
+        error, 
+        mediaWarning, 
+        setMediaWarning, 
+        joinMeeting, 
+        leaveMeeting, 
+        toggleMute, 
+        toggleVideo 
+    } = useMeeting();
+
     const [userName, setUserName] = useState(propUserName || '');
     const [hasJoined, setHasJoined] = useState(false);
     const [joining, setJoining] = useState(false);
@@ -75,7 +89,7 @@ export default function DynamicMeetingArea({ roomId, userName: propUserName, onE
         );
     }
 
-    if (error) {
+    if (error && !isConnected) {
         return (
             <div className="flex-1 flex items-center justify-center bg-[#1e1f22] p-8">
                 <div className="text-center space-y-4">
@@ -114,6 +128,18 @@ export default function DynamicMeetingArea({ roomId, userName: propUserName, onE
                     <Copy className="w-3.5 h-3.5" /> Copy Link
                 </button>
             </div>
+
+            {mediaWarning && (
+                <div className="bg-amber-950/60 border-b border-amber-500/30 px-4 py-2 text-amber-300 text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+                        <span>{mediaWarning}</span>
+                    </div>
+                    <button onClick={() => setMediaWarning(null)} className="text-zinc-400 hover:text-white p-1">
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-4 flex items-center justify-center">
                 <div className={cn("w-full grid gap-4", gridCols)}>
@@ -170,20 +196,26 @@ type VideoTileProps = {
 function VideoTile({ socketId, userName, isLocal, isMuted, isVideoOff, stream }: VideoTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
 
+    const hasVideoTracks = !!(stream && stream.getVideoTracks().length > 0 && stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live'));
+    const showVideo = hasVideoTracks && !isVideoOff;
+
     useEffect(() => {
         const video = videoRef.current;
         if (!video) return;
 
-        if (stream) {
+        if (stream && showVideo) {
             video.srcObject = stream;
             video.muted = isLocal;
-            video.play().catch(() => {});
+            const playPromise = video.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(() => {});
+            }
         } else {
             video.srcObject = null;
         }
-    }, [stream, isLocal]);
+    }, [stream, isLocal, showVideo]);
 
-    const initials = userName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || 'U';
+    const initials = userName ? userName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) : 'U';
 
     return (
         <div className="relative bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 flex items-center justify-center group aspect-video">
@@ -192,13 +224,13 @@ function VideoTile({ socketId, userName, isLocal, isMuted, isVideoOff, stream }:
                 autoPlay
                 playsInline
                 muted={isLocal}
-                className={cn("w-full h-full object-cover", isVideoOff && "hidden")}
+                className={cn("w-full h-full object-cover", !showVideo && "hidden")}
             />
 
-            {isVideoOff && (
+            {!showVideo && (
                 <div className="absolute inset-0 flex items-center justify-center bg-zinc-900">
                     <div className={cn(
-                        "w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold text-white",
+                        "w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold text-white shadow-lg",
                         isLocal ? "bg-gradient-to-br from-blue-600 to-purple-600" : "bg-gradient-to-br from-zinc-700 to-zinc-800"
                     )}>
                         {initials}
