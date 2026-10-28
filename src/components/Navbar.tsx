@@ -63,7 +63,7 @@ export default function Navbar() {
                         <NavLink href="/dashboard">Dashboard</NavLink>
                         <NavLink href="/about">About</NavLink>
                         <NavLink href="/chatbot">Chatbot</NavLink>
-                        <NavLink href="/streaming-meetings">Streaming/Meetings</NavLink>
+                        <NavLink href="/streaming-meetings">Meetings</NavLink>
                     </div>
 
                     {/* Right Side */}
@@ -153,7 +153,7 @@ export default function Navbar() {
                     Web Hub
                 </MobileNavLink>
                 <MobileNavLink href="/streaming-meetings" onClick={() => setMobileMenuOpen(false)}>
-                    Streaming & Meetings
+                    Meetings
                 </MobileNavLink>
 
                 {user ? (

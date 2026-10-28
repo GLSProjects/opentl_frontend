@@ -46,20 +46,19 @@ function Counter({ to, label, suffix = "" }: { to: number; label: string; suffix
     );
 }
 
-/* ─── Floating particles ─────────────────────────────────────────────────── */
-function Particles() {
-    const particles = Array.from({ length: 20 }, (_, i) => ({
-        id: i,
-        x: Math.random() * 100,
-        y: Math.random() * 100,
-        size: Math.random() * 3 + 1,
-        duration: Math.random() * 6 + 4,
-        delay: Math.random() * 4,
-    }));
+const PARTICLES = Array.from({ length: 20 }, (_, i) => ({
+    id: i,
+    x: ((i * 37 + 13) % 100),
+    y: ((i * 53 + 27) % 100),
+    size: ((i * 7) % 3) + 1.5,
+    duration: ((i * 11) % 6) + 4,
+    delay: ((i * 13) % 4),
+}));
 
+function Particles() {
     return (
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            {particles.map(p => (
+            {PARTICLES.map(p => (
                 <motion.div
                     key={p.id}
                     className="absolute rounded-full bg-red-500/40"

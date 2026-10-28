@@ -14,12 +14,11 @@ import CreateChannelModal from "@/components/CreateChannelModal";
 import UserSettingsModal from "@/components/UserSettingsModal";
 import StreamMeetingModal from "@/components/StreamMeetingModal";
 import MeetingArea from "@/components/MeetingArea";
-import StreamingArea from "@/components/StreamingArea";
 import LoginPopup from "@/components/LoginPopup";
 import DiscoverCommunitiesModal from "@/components/DiscoverCommunitiesModal";
 import { useAuth } from "@/context/AuthContext";
 
-type ViewMode = "normal" | "streaming" | "meeting";
+type ViewMode = "normal" | "meeting";
 
 interface Channel {
     _id?: string;
@@ -55,8 +54,7 @@ const DashboardLayoutContent = ({ children }: { children: React.ReactNode }) => 
     const [viewMode, setViewMode] = useState<ViewMode>("normal");
     const [loading, setLoading] = useState(true);
     const [showLoginPopup, setShowLoginPopup] = useState(false);
-
-    // Removed auto-redirect. Now we render a "Recommended to sign in" view instead.
+
 
     // Fetch servers on mount
     useEffect(() => {
@@ -357,8 +355,6 @@ const DashboardLayoutContent = ({ children }: { children: React.ReactNode }) => 
             <main className="flex-1 flex flex-col h-full overflow-hidden">
                 {viewMode === "meeting" ? (
                     <MeetingArea onEnd={() => setViewMode("normal")} />
-                ) : viewMode === "streaming" ? (
-                    <StreamingArea onEnd={() => setViewMode("normal")} />
                 ) : activeServer && activeChannel ? (
                     activeChannel.type === "text" ? (
                         <>

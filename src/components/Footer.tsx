@@ -45,7 +45,7 @@ export default function Footer() {
               </li>
               <li>
                 <Link href="streaming-meetings" className="hover:text-red-500 transition">
-                  streaming & meetings
+                  Meetings
                 </Link>
               </li>
             </ul>
