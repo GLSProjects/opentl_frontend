@@ -56,7 +56,7 @@ export default function VoiceArea({ channelName, roomId }: { channelName: string
         if (serverId && user?.token) {
             try {
                 // Fetch server data to find a text channel
-                const res = await fetch(`http://127.0.0.1:5000/api/servers/${serverId}`, {
+                const res = await fetch(`https://opentl-backend-1.onrender.com/api/servers/${serverId}`, {
                     headers: {
                         Authorization: `Bearer ${user.token}`,
                     },

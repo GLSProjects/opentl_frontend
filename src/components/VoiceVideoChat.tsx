@@ -293,7 +293,7 @@ export default function VoiceVideoChat({ serverId, channelId, isOpen, onClose }:
         if (serverId && user?.token) {
             try {
                 // Fetch server data to find a text channel
-                const res = await fetch(`http://127.0.0.1:5000/api/servers/${serverId}`, {
+                const res = await fetch(`https://opentl-backend-1.onrender.com/api/servers/${serverId}`, {
                     headers: {
                         Authorization: `Bearer ${user.token}`,
                     },
@@ -481,7 +481,7 @@ export default function VoiceVideoChat({ serverId, channelId, isOpen, onClose }:
     useEffect(() => {
         if (!isOpen || !user) return;
 
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5000";
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://opentl-backend-1.onrender.com";
         socketRef.current = io(backendUrl, {
             transports: ["websocket"],
             withCredentials: true,

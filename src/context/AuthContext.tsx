@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!user) return false;
 
         try {
-            const res = await fetch("http://127.0.0.1:5000/api/auth/profile", {
+            const res = await fetch("https://opentl-backend-1.onrender.com/api/auth/profile", {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",
@@ -89,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const googleAuth = async (email: string, username: string, avatar: string) => {
         try {
-            const res = await fetch("http://127.0.0.1:5000/api/auth/google", {
+            const res = await fetch("https://opentl-backend-1.onrender.com/api/auth/google", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

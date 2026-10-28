@@ -65,7 +65,7 @@ const DashboardLayoutContent = ({ children }: { children: React.ReactNode }) => 
             }
 
             try {
-                const res = await fetch("http://127.0.0.1:5000/api/servers", {
+                const res = await fetch("https://opentl-backend-1.onrender.com/api/servers", {
                     headers: {
                         Authorization: `Bearer ${user.token}`,
                     },
@@ -121,7 +121,7 @@ const DashboardLayoutContent = ({ children }: { children: React.ReactNode }) => 
         if (!user?.token || !activeServerId) return;
 
         try {
-            const res = await fetch(`http://127.0.0.1:5000/api/servers/${activeServerId}/channels`, {
+            const res = await fetch(`https://opentl-backend-1.onrender.com/api/servers/${activeServerId}/channels`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -157,7 +157,7 @@ const DashboardLayoutContent = ({ children }: { children: React.ReactNode }) => 
         if (!user?.token) return;
 
         try {
-            const res = await fetch("http://127.0.0.1:5000/api/servers", {
+            const res = await fetch("https://opentl-backend-1.onrender.com/api/servers", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
