@@ -48,7 +48,7 @@ interface Server {
     color: string;
     channels: Channel[];
     owner?: string | { _id?: string; id?: string };
-    server_type?: "private" | "community";
+    server_type?: "private" | "community" | "friends";
     members?: ServerMember[];
 }
 
@@ -592,7 +592,7 @@ export default function ChannelSidebar({
                     isOpen={editModalOpen}
                     onClose={() => setEditModalOpen(false)}
                     onServerUpdated={(updated) => {
-                        onServerUpdated(updated);
+                        onServerUpdated(updated as any);
                         setEditModalOpen(false);
                     }}
                     onServerDeleted={(serverId) => {

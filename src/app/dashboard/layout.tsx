@@ -34,7 +34,9 @@ interface Server {
     icon: string;
     color: string;
     channels: Channel[];
-    owner?: string;
+    owner?: string | { _id?: string; id?: string };
+    server_type?: "private" | "community";
+    members?: any[];
 }
 
 const DashboardLayoutContent = ({ children }: { children: React.ReactNode }) => {
@@ -341,7 +343,7 @@ const DashboardLayoutContent = ({ children }: { children: React.ReactNode }) => 
                         onChannelSelect={handleChannelSelect}
                         onCreateChannel={() => setIsChannelModalOpen(true)}
                         onUserSettings={() => setIsUserSettingsOpen(true)}
-                        onServerUpdated={handleServerUpdated}
+                        onServerUpdated={handleServerUpdated as any}
                         onServerDeleted={handleServerDeleted}
                     />
                 ) : (
