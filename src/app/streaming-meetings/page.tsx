@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import DynamicMeetingArea from "@/components/DynamicMeetingArea";
-import { Video, Monitor, Users, Shield, ChevronLeft } from "lucide-react";
+import { Video, Monitor, Users, Shield, ChevronLeft, Keyboard } from "lucide-react";
 import Footer from "@/components/Footer";
 
 type ViewMode = "selection" | "meeting" | "create-meeting";
@@ -16,13 +16,27 @@ type FeatureItemProps = {
 export default function StreamingMeetingsPage() {
     const router = useRouter();
     const [viewMode, setViewMode] = useState<ViewMode>("selection");
+    const [showJoinInput, setShowJoinInput] = useState(false);
+    const [joinLink, setJoinLink] = useState("");
 
     const handleCreateMeeting = () => {
         router.push('/create-meeting');
     };
 
-    const handleJoinMeeting = () => {
-        router.push('/create-meeting');
+    const handleJoinWithLink = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const raw = joinLink.trim();
+        if (!raw) return;
+
+        let code = raw;
+        if (code.includes("/meeting/")) {
+            code = code.split("/meeting/")[1];
+        }
+        code = code.split("?")[0].replace(/\/+$/, "").trim();
+
+        if (code) {
+            router.push(`/meeting/${code}`);
+        }
     };
 
     return (
@@ -65,21 +79,57 @@ export default function StreamingMeetingsPage() {
                                 </div>
                             </div>
 
-                            <div className="mt-12 flex justify-center gap-4">
+                            <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
                                 <button
                                     onClick={handleCreateMeeting}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center gap-2"
+                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-8 py-3.5 rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-blue-600/30 shrink-0"
                                 >
                                     <Video className="w-5 h-5" />
                                     Create Meeting
                                 </button>
-                                <button
-                                    onClick={handleJoinMeeting}
-                                    className="bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center gap-2"
-                                >
-                                    <Users className="w-5 h-5" />
-                                    Join Meeting
-                                </button>
+
+                                {!showJoinInput ? (
+                                    <button
+                                        onClick={() => setShowJoinInput(true)}
+                                        className="bg-zinc-700 hover:bg-zinc-600 text-white font-bold px-8 py-3.5 rounded-xl transition-all flex items-center gap-2 shrink-0"
+                                    >
+                                        <Users className="w-5 h-5" />
+                                        Join Meeting
+                                    </button>
+                                ) : (
+                                    <form
+                                        onSubmit={handleJoinWithLink}
+                                        className="flex items-center bg-[#2b2d31] border border-zinc-700 hover:border-zinc-500 rounded-full px-4 py-1.5 shadow-xl transition-all animate-in fade-in zoom-in-95 duration-200"
+                                    >
+                                        <Keyboard className="w-5 h-5 text-zinc-400 shrink-0 mr-2" />
+                                        <input
+                                            type="text"
+                                            value={joinLink}
+                                            onChange={(e) => setJoinLink(e.target.value)}
+                                            placeholder="Enter a code or link"
+                                            autoFocus
+                                            className="bg-transparent text-white placeholder-zinc-500 text-sm py-2 focus:outline-none w-52 sm:w-64"
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={!joinLink.trim()}
+                                            className="text-sm font-semibold px-4 py-2 rounded-full transition text-blue-400 hover:text-blue-300 disabled:text-zinc-500 disabled:cursor-not-allowed"
+                                        >
+                                            Join
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowJoinInput(false);
+                                                setJoinLink("");
+                                            }}
+                                            className="text-zinc-400 hover:text-white p-1 rounded-full text-xs ml-1"
+                                            title="Cancel"
+                                        >
+                                            ✕
+                                        </button>
+                                    </form>
+                                )}
                             </div>
                         </div>
                     </div>

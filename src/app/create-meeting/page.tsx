@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Video, Users, Plus, Copy, Check } from "lucide-react";
+import { Video, Users, Plus, Copy, Check, Keyboard } from "lucide-react";
 import { useMeeting } from "@/hooks/useMeeting";
 import { useAuth } from "@/context/AuthContext";
 import AuthGate from "@/components/meeting/AuthGate";
@@ -21,6 +21,7 @@ function CreateMeetingContent() {
     const { createRoom, getActiveRooms } = useMeeting();
 
     const [roomName, setRoomName] = useState("");
+    const [joinCode, setJoinCode] = useState("");
     const [isCreating, setIsCreating] = useState(false);
     const [createdRoom, setCreatedRoom] = useState<any>(null);
     const [activeRooms, setActiveRooms] = useState<any[]>([]);
@@ -59,6 +60,22 @@ function CreateMeetingContent() {
         setIsCreating(false);
     };
 
+    const handleJoinWithCode = (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        const raw = joinCode.trim();
+        if (!raw) return;
+
+        let code = raw;
+        if (code.includes("/meeting/")) {
+            code = code.split("/meeting/")[1];
+        }
+        code = code.split("?")[0].replace(/\/+$/, "").trim();
+
+        if (code) {
+            router.push(`/meeting/${code}`);
+        }
+    };
+
     const handleJoinRoom = (roomId: string) => {
         router.push(`/meeting/${roomId}`);
     };
@@ -78,9 +95,32 @@ function CreateMeetingContent() {
         <div className="min-h-screen bg-[#1e1f22] flex flex-col">
             <main className="flex-1 p-8">
                 <div className="max-w-6xl mx-auto">
-                    <div className="text-center mb-12">
+                    <div className="text-center mb-6">
                         <h1 className="text-5xl font-black text-white mb-4">Create Meeting</h1>
                         <p className="text-zinc-400 text-xl">Start a professional video meeting with your team</p>
+                    </div>
+
+                    <div className="flex justify-center mb-10">
+                        <form
+                            onSubmit={handleJoinWithCode}
+                            className="flex items-center bg-[#2b2d31] border border-zinc-700 hover:border-zinc-500 rounded-full px-4 py-1.5 shadow-xl transition-all w-full max-w-md"
+                        >
+                            <Keyboard className="w-5 h-5 text-zinc-400 shrink-0 mr-2" />
+                            <input
+                                type="text"
+                                value={joinCode}
+                                onChange={(e) => setJoinCode(e.target.value)}
+                                placeholder="Enter a code or link"
+                                className="bg-transparent text-white placeholder-zinc-500 text-sm py-2 focus:outline-none flex-1"
+                            />
+                            <button
+                                type="submit"
+                                disabled={!joinCode.trim()}
+                                className="text-sm font-semibold px-4 py-2 rounded-full transition text-blue-400 hover:text-blue-300 disabled:text-zinc-500 disabled:cursor-not-allowed"
+                            >
+                                Join
+                            </button>
+                        </form>
                     </div>
 
                     <div className="grid lg:grid-cols-2 gap-8">
@@ -162,7 +202,7 @@ function CreateMeetingContent() {
                                             />
                                             <button
                                                 onClick={copyMeetingLink}
-                                                className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded transition"
+                                                className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded-transition"
                                             >
                                                 {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                                             </button>
