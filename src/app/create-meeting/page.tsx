@@ -47,13 +47,20 @@ export default function CreateMeetingPage() {
         
         if (room) {
             setCreatedRoom(room);
+            if (typeof window !== 'undefined' && room.hostToken) {
+                sessionStorage.setItem(`meeting-host-${room.id}`, room.hostToken);
+            }
+            router.push(`/meeting/${room.id}?user=${encodeURIComponent(formData.hostName)}`);
+            return;
         }
         
         setIsCreating(false);
     };
 
     const handleJoinRoom = (roomId: string) => {
-        // Navigate to meeting with room ID
+        if (createdRoom && createdRoom.id === roomId && createdRoom.hostToken && typeof window !== 'undefined') {
+            sessionStorage.setItem(`meeting-host-${roomId}`, createdRoom.hostToken);
+        }
         router.push(`/meeting/${roomId}?user=${encodeURIComponent(formData.hostName || 'Guest')}`);
     };
 

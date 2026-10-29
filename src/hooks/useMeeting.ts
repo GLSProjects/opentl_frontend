@@ -10,6 +10,7 @@ export type Participant = {
     avatar: string;
     isMuted: boolean;
     isVideoOff: boolean;
+    isHost?: boolean;
     stream?: MediaStream;
 };
 
@@ -19,37 +20,54 @@ type UseMeetingReturn = {
     isMuted: boolean;
     isVideoOff: boolean;
     isConnected: boolean;
+    isHost: boolean;
     error: string | null;
     mediaWarning: string | null;
+    meetingEnded: { endedBy: string } | null;
     setMediaWarning: (warning: string | null) => void;
-    joinMeeting: (roomId: string, userId: string, userName: string, avatar?: string) => Promise<void>;
+    joinMeeting: (
+        roomId: string, 
+        userId: string, 
+        userName: string, 
+        avatar?: string, 
+        initialMedia?: { isMuted: boolean; isVideoOff: boolean }, 
+        existingStream?: MediaStream | null
+    ) => Promise<void>;
     leaveMeeting: () => void;
+    endMeetingForAll: () => void;
     toggleMute: () => Promise<void>;
     toggleVideo: () => Promise<void>;
     createRoom: (roomName: string, hostName: string, isPrivate?: boolean) => Promise<any>;
     getActiveRooms: () => Promise<any[]>;
+    getRoomInfo: (roomId: string) => Promise<any>;
 };
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://opentl-backend-hj2y.onrender.com';
 
-const RTC_CONFIG: RTCConfiguration = {
-    iceServers: [
+const getRtcConfig = (): RTCConfiguration => {
+    const iceServers: RTCIceServer[] = [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
-        { 
-            urls: 'turn:turn.relay.metered.ca:80', 
-            username: 'test', 
-            credential: 'test' 
-        },
-        { 
-            urls: 'turn:turn.openrelay.metered.ca:443', 
-            username: 'openrelayproject', 
-            credential: 'openrelayproject' 
-        }
-    ],
-    iceCandidatePoolSize: 10,
+    ];
+
+    const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+    const turnUser = process.env.NEXT_PUBLIC_TURN_USERNAME;
+    const turnCred = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+
+    if (turnUrl && turnUser && turnCred) {
+        iceServers.push({
+            urls: turnUrl,
+            username: turnUser,
+            credential: turnCred,
+        });
+    }
+
+    return {
+        iceServers,
+        iceCandidatePoolSize: 10,
+    };
 };
 
 export function useMeeting(): UseMeetingReturn {
@@ -58,49 +76,85 @@ export function useMeeting(): UseMeetingReturn {
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
+    const [isHost, setIsHost] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [mediaWarning, setMediaWarning] = useState<string | null>(null);
+    const [meetingEnded, setMeetingEnded] = useState<{ endedBy: string } | null>(null);
 
     const socketRef = useRef<Socket | null>(null);
     const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+    const makingOfferMap = useRef<Map<string, boolean>>(new Map());
     const iceCandidateQueue = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+    const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
     const roomIdRef = useRef<string | null>(null);
     const userInfoRef = useRef<{ userId: string; userName: string; avatar: string } | null>(null);
+    const isMutedRef = useRef(false);
+    const isVideoOffRef = useRef(false);
+    const isHostRef = useRef(false);
+    const joinLockRef = useRef(false);
 
-    const createPeerConnection = useCallback((targetSocketId: string): RTCPeerConnection => {
-        const pc = new RTCPeerConnection(RTC_CONFIG);
-
-        if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
-            localStreamRef.current.getTracks().forEach(track => {
-                pc.addTrack(track, localStreamRef.current!);
-            });
+    const getOrCreatePeerConnection = useCallback((targetSocketId: string): RTCPeerConnection => {
+        const existing = peerConnectionsRef.current.get(targetSocketId);
+        if (existing) {
+            return existing;
         }
 
-        const transceivers = pc.getTransceivers();
-        if (!transceivers.some(t => t.receiver?.track?.kind === 'audio')) {
-            try { pc.addTransceiver('audio', { direction: 'recvonly' }); } catch (e) {}
+        const pc = new RTCPeerConnection(getRtcConfig());
+        peerConnectionsRef.current.set(targetSocketId, pc);
+
+        const currentLocal = localStreamRef.current;
+        const audioTrack = currentLocal?.getAudioTracks()[0] || null;
+        const videoTrack = currentLocal?.getVideoTracks()[0] || null;
+
+        const audioTransceiver = pc.addTransceiver('audio', {
+            direction: 'sendrecv',
+            streams: currentLocal ? [currentLocal] : []
+        });
+        if (audioTrack && audioTransceiver.sender) {
+            audioTransceiver.sender.replaceTrack(audioTrack).catch(() => {});
         }
-        if (!transceivers.some(t => t.receiver?.track?.kind === 'video')) {
-            try { pc.addTransceiver('video', { direction: 'recvonly' }); } catch (e) {}
+
+        const videoTransceiver = pc.addTransceiver('video', {
+            direction: 'sendrecv',
+            streams: currentLocal ? [currentLocal] : []
+        });
+        if (videoTrack && !isVideoOffRef.current && videoTransceiver.sender) {
+            videoTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
         }
+
+        pc.onnegotiationneeded = async () => {
+            try {
+                makingOfferMap.current.set(targetSocketId, true);
+                const offer = await pc.createOffer();
+                if (pc.signalingState !== 'stable') return;
+                await pc.setLocalDescription(offer);
+                if (socketRef.current) {
+                    socketRef.current.emit('meeting-offer', {
+                        targetSocketId,
+                        offer: pc.localDescription,
+                        fromSocketId: socketRef.current.id,
+                        userName: userInfoRef.current?.userName || '',
+                    });
+                }
+            } catch (err) {
+                console.error('Negotiation offer error:', err);
+            } finally {
+                makingOfferMap.current.set(targetSocketId, false);
+            }
+        };
 
         pc.ontrack = (event) => {
-            setParticipants(prev => prev.map(p => {
-                if (p.socketId !== targetSocketId) return p;
-                const existingStream = p.stream;
-                let newStream: MediaStream;
-                if (event.streams && event.streams[0]) {
-                    newStream = new MediaStream(event.streams[0].getTracks());
-                } else if (existingStream) {
-                    const tracks = existingStream.getTracks().filter(t => t.id !== event.track.id);
-                    newStream = new MediaStream([...tracks, event.track]);
-                } else {
-                    newStream = new MediaStream([event.track]);
+            const stream = event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+            remoteStreamsRef.current.set(targetSocketId, stream);
+
+            setParticipants(prev => {
+                const found = prev.find(p => p.socketId === targetSocketId);
+                if (found) {
+                    return prev.map(p => p.socketId === targetSocketId ? { ...p, stream } : p);
                 }
-                const hasVideo = newStream.getVideoTracks().some(t => t.enabled);
-                return { ...p, stream: newStream, isVideoOff: !hasVideo };
-            }));
+                return prev;
+            });
         };
 
         pc.onicecandidate = (event) => {
@@ -113,57 +167,122 @@ export function useMeeting(): UseMeetingReturn {
             }
         };
 
-        peerConnectionsRef.current.set(targetSocketId, pc);
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'failed') {
+                if (typeof pc.restartIce === 'function') {
+                    pc.restartIce();
+                }
+            }
+        };
+
         return pc;
     }, []);
 
-    const joinMeeting = useCallback(async (roomId: string, userId: string, userName: string, avatar = '') => {
+    const joinMeeting = useCallback(async (
+        roomId: string, 
+        userId: string, 
+        userName: string, 
+        avatar = '', 
+        initialMedia = { isMuted: false, isVideoOff: false },
+        existingStream: MediaStream | null = null
+    ) => {
+        if (joinLockRef.current && roomIdRef.current === roomId) {
+            return;
+        }
+        joinLockRef.current = true;
         setError(null);
+        setMeetingEnded(null);
         setMediaWarning(null);
         roomIdRef.current = roomId;
         userInfoRef.current = { userId, userName, avatar };
 
-        let stream: MediaStream | null = null;
-        let initialMuted = false;
-        let initialVideoOff = false;
+        isMutedRef.current = initialMedia.isMuted;
+        isVideoOffRef.current = initialMedia.isVideoOff;
+        setIsMuted(initialMedia.isMuted);
+        setIsVideoOff(initialMedia.isVideoOff);
 
-        const hasMediaDevices = typeof navigator !== 'undefined' && !!navigator?.mediaDevices?.getUserMedia;
+        let stream: MediaStream | null = existingStream;
 
-        if (hasMediaDevices) {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation: true, noiseSuppression: true },
-                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                });
-            } catch (err1) {
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        audio: { echoCancellation: true, noiseSuppression: true },
-                        video: false,
-                    });
-                    initialVideoOff = true;
-                    setMediaWarning('Camera unavailable or permission denied. Joined with microphone only.');
-                } catch (err2) {
+        if (!stream) {
+            const hasMediaDevices = typeof navigator !== 'undefined' && !!navigator?.mediaDevices?.getUserMedia;
+            if (hasMediaDevices) {
+                if (!initialMedia.isVideoOff) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: true, noiseSuppression: true },
+                            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                        });
+                    } catch (err1) {
+                        try {
+                            stream = await navigator.mediaDevices.getUserMedia({
+                                audio: { echoCancellation: true, noiseSuppression: true },
+                                video: false,
+                            });
+                            isVideoOffRef.current = true;
+                            setIsVideoOff(true);
+                            setMediaWarning('Camera unavailable or permission denied. Joined with microphone only.');
+                        } catch (err2) {
+                            stream = new MediaStream();
+                            isMutedRef.current = true;
+                            isVideoOffRef.current = true;
+                            setIsMuted(true);
+                            setIsVideoOff(true);
+                            setMediaWarning('Camera and microphone permission denied. Joined in listen-only mode.');
+                        }
+                    }
+                } else if (!initialMedia.isMuted) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            audio: { echoCancellation: true, noiseSuppression: true },
+                            video: false,
+                        });
+                    } catch (err) {
+                        stream = new MediaStream();
+                        isMutedRef.current = true;
+                        setIsMuted(true);
+                        setMediaWarning('Microphone permission denied. Joined in listen-only mode.');
+                    }
+                } else {
                     stream = new MediaStream();
-                    initialMuted = true;
-                    initialVideoOff = true;
-                    setMediaWarning('Camera and microphone permission denied. Joined in listen-only mode.');
                 }
+            } else {
+                stream = new MediaStream();
+                isMutedRef.current = true;
+                isVideoOffRef.current = true;
+                setIsMuted(true);
+                setIsVideoOff(true);
+                setMediaWarning('Camera & mic require HTTPS or localhost. Joined in listen-only mode.');
             }
-        } else {
-            stream = new MediaStream();
-            initialMuted = true;
-            initialVideoOff = true;
-            setMediaWarning('Camera & mic require HTTPS or localhost. Joined in listen-only mode.');
+        }
+
+        if (stream) {
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length > 0) {
+                audioTracks.forEach(t => { t.enabled = !isMutedRef.current; });
+            }
+            if (isVideoOffRef.current) {
+                stream.getVideoTracks().forEach(t => {
+                    t.stop();
+                    stream?.removeTrack(t);
+                });
+            }
         }
 
         localStreamRef.current = stream;
-        setLocalStream(stream);
-        setIsMuted(initialMuted);
-        setIsVideoOff(initialVideoOff);
+        setLocalStream(stream ? new MediaStream(stream.getTracks()) : null);
+
+        let hostToken: string | null = null;
+        if (typeof window !== 'undefined') {
+            hostToken = sessionStorage.getItem(`meeting-host-${roomId}`);
+        }
 
         try {
-            const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
+            const socket = io(BACKEND_URL, { 
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+            });
             socketRef.current = socket;
 
             socket.on('connect', () => {
@@ -173,8 +292,9 @@ export function useMeeting(): UseMeetingReturn {
                     userId,
                     userName,
                     avatar,
-                    isMuted: initialMuted,
-                    isVideoOff: initialVideoOff,
+                    isMuted: isMutedRef.current,
+                    isVideoOff: isVideoOffRef.current,
+                    hostToken,
                 });
             });
 
@@ -183,65 +303,102 @@ export function useMeeting(): UseMeetingReturn {
                 console.error('Socket connect error:', err);
             });
 
-            socket.on('meeting-existing-users', async (users: Array<{ socketId: string; userId: string; userName: string; avatar: string; isMuted?: boolean; isVideoOff?: boolean }>) => {
+            socket.on('meeting-error', ({ code, message }: { code: string; message: string }) => {
+                setError(code === 'ROOM_NOT_FOUND' ? 'ROOM_NOT_FOUND' : (code === 'ROOM_ENDED' ? 'ROOM_ENDED' : message));
+            });
+
+            socket.on('meeting-ended', ({ endedBy }: { roomId: string; endedBy: string }) => {
+                setMeetingEnded({ endedBy: endedBy || 'Host' });
+                if (localStreamRef.current) {
+                    localStreamRef.current.getTracks().forEach(t => t.stop());
+                }
+                peerConnectionsRef.current.forEach(pc => pc.close());
+                peerConnectionsRef.current.clear();
+                socket.disconnect();
+                setIsConnected(false);
+            });
+
+            socket.on('meeting-host-changed', ({ newHostSocketId }: { newHostSocketId: string; newHostName: string }) => {
+                const selfIsHost = newHostSocketId === socket.id;
+                isHostRef.current = selfIsHost;
+                setIsHost(selfIsHost);
+                setParticipants(prev => prev.map(p => ({
+                    ...p,
+                    isHost: p.socketId === newHostSocketId,
+                })));
+            });
+
+            socket.on('meeting-existing-users', async (users: Array<{ socketId: string; userId: string; userName: string; avatar: string; isMuted?: boolean; isVideoOff?: boolean; isHost?: boolean }>) => {
                 setParticipants(users.map(u => ({
                     ...u,
                     isMuted: u.isMuted ?? false,
                     isVideoOff: u.isVideoOff ?? false,
+                    isHost: u.isHost ?? false,
+                    stream: remoteStreamsRef.current.get(u.socketId),
                 })));
 
                 for (const user of users) {
-                    const pc = createPeerConnection(user.socketId);
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    socket.emit('meeting-offer', {
-                        targetSocketId: user.socketId,
-                        offer,
-                        fromSocketId: socket.id,
-                        userName,
-                    });
+                    getOrCreatePeerConnection(user.socketId);
                 }
             });
 
-            socket.on('meeting-user-joined', (user: { socketId: string; userId: string; userName: string; avatar: string; isMuted?: boolean; isVideoOff?: boolean }) => {
+            socket.on('meeting-user-joined', (user: { socketId: string; userId: string; userName: string; avatar: string; isMuted?: boolean; isVideoOff?: boolean; isHost?: boolean }) => {
                 setParticipants(prev => {
-                    if (prev.find(p => p.socketId === user.socketId)) return prev;
-                    return [...prev, {
+                    const filtered = prev.filter(p => p.socketId !== user.socketId);
+                    return [...filtered, {
                         ...user,
                         isMuted: user.isMuted ?? false,
                         isVideoOff: user.isVideoOff ?? false,
+                        isHost: user.isHost ?? false,
+                        stream: remoteStreamsRef.current.get(user.socketId),
                     }];
                 });
             });
 
             socket.on('meeting-offer', async ({ offer, fromSocketId, userName: fromName }: { offer: RTCSessionDescriptionInit; fromSocketId: string; userName: string }) => {
-                const pc = createPeerConnection(fromSocketId);
-                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                const pc = getOrCreatePeerConnection(fromSocketId);
+                const isPolite = socket.id < fromSocketId;
+                const isMakingOffer = makingOfferMap.current.get(fromSocketId) || false;
+                const offerCollision = isMakingOffer || pc.signalingState !== 'stable';
 
-                const queue = iceCandidateQueue.current.get(fromSocketId) || [];
-                for (const candidate of queue) {
-                    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
+                if (!isPolite && offerCollision) {
+                    return;
                 }
-                iceCandidateQueue.current.delete(fromSocketId);
 
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                socket.emit('meeting-answer', {
-                    targetSocketId: fromSocketId,
-                    answer,
-                    fromSocketId: socket.id,
-                });
-            });
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-            socket.on('meeting-answer', async ({ answer, fromSocketId }: { answer: RTCSessionDescriptionInit; fromSocketId: string }) => {
-                const pc = peerConnectionsRef.current.get(fromSocketId);
-                if (pc) {
-                    await pc.setRemoteDescription(new RTCSessionDescription(answer));
                     const queue = iceCandidateQueue.current.get(fromSocketId) || [];
                     for (const candidate of queue) {
                         try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
                     }
                     iceCandidateQueue.current.delete(fromSocketId);
+
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    socket.emit('meeting-answer', {
+                        targetSocketId: fromSocketId,
+                        answer: pc.localDescription,
+                        fromSocketId: socket.id,
+                    });
+                } catch (err) {
+                    console.error('Error handling meeting-offer:', err);
+                }
+            });
+
+            socket.on('meeting-answer', async ({ answer, fromSocketId }: { answer: RTCSessionDescriptionInit; fromSocketId: string }) => {
+                const pc = peerConnectionsRef.current.get(fromSocketId);
+                if (pc && pc.signalingState === 'have-local-offer') {
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                        const queue = iceCandidateQueue.current.get(fromSocketId) || [];
+                        for (const candidate of queue) {
+                            try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
+                        }
+                        iceCandidateQueue.current.delete(fromSocketId);
+                    } catch (err) {
+                        console.error('Error handling meeting-answer:', err);
+                    }
                 }
             });
 
@@ -259,8 +416,13 @@ export function useMeeting(): UseMeetingReturn {
 
             socket.on('meeting-user-left', ({ socketId }: { socketId: string }) => {
                 const pc = peerConnectionsRef.current.get(socketId);
-                if (pc) { pc.close(); peerConnectionsRef.current.delete(socketId); }
+                if (pc) { 
+                    pc.close(); 
+                    peerConnectionsRef.current.delete(socketId); 
+                }
                 iceCandidateQueue.current.delete(socketId);
+                remoteStreamsRef.current.delete(socketId);
+                makingOfferMap.current.delete(socketId);
                 setParticipants(prev => prev.filter(p => p.socketId !== socketId));
             });
 
@@ -275,22 +437,37 @@ export function useMeeting(): UseMeetingReturn {
             setError(msg);
             console.error('Meeting join error:', err);
         }
-    }, [createPeerConnection]);
+    }, [getOrCreatePeerConnection]);
 
     const leaveMeeting = useCallback(() => {
+        joinLockRef.current = false;
         if (socketRef.current && roomIdRef.current) {
             socketRef.current.emit('meeting-leave', { roomId: roomIdRef.current });
             socketRef.current.disconnect();
+            socketRef.current = null;
         }
         peerConnectionsRef.current.forEach(pc => pc.close());
         peerConnectionsRef.current.clear();
         iceCandidateQueue.current.clear();
-        localStreamRef.current?.getTracks().forEach(t => t.stop());
-        localStreamRef.current = null;
+        remoteStreamsRef.current.clear();
+        makingOfferMap.current.clear();
+
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(t => t.stop());
+            localStreamRef.current = null;
+        }
         setLocalStream(null);
         setParticipants([]);
         setIsConnected(false);
+        setIsHost(false);
+        isHostRef.current = false;
         roomIdRef.current = null;
+    }, []);
+
+    const endMeetingForAll = useCallback(() => {
+        if (socketRef.current && roomIdRef.current) {
+            socketRef.current.emit('meeting-end', { roomId: roomIdRef.current });
+        }
     }, []);
 
     const toggleMute = useCallback(async () => {
@@ -309,15 +486,23 @@ export function useMeeting(): UseMeetingReturn {
                         targetStream.addTrack(newAudioTrack);
                         localStreamRef.current = targetStream;
                         setLocalStream(new MediaStream(targetStream.getTracks()));
-                        peerConnectionsRef.current.forEach(pc => {
-                            pc.addTrack(newAudioTrack, targetStream);
-                        });
+
+                        for (const pc of peerConnectionsRef.current.values()) {
+                            const audioTransceiver = pc.getTransceivers().find(t => t.receiver.track.kind === 'audio');
+                            if (audioTransceiver && audioTransceiver.sender) {
+                                await audioTransceiver.sender.replaceTrack(newAudioTrack);
+                            } else {
+                                pc.addTrack(newAudioTrack, targetStream);
+                            }
+                        }
+
+                        isMutedRef.current = false;
                         setIsMuted(false);
                         if (socketRef.current && roomIdRef.current) {
                             socketRef.current.emit('meeting-media-state', {
                                 roomId: roomIdRef.current,
                                 isMuted: false,
-                                isVideoOff,
+                                isVideoOff: isVideoOffRef.current,
                             });
                         }
                     }
@@ -328,66 +513,92 @@ export function useMeeting(): UseMeetingReturn {
             return;
         }
 
-        const currentlyEnabled = audioTracks[0].enabled;
-        audioTracks.forEach(t => { t.enabled = !currentlyEnabled; });
-        setIsMuted(currentlyEnabled);
+        const currentlyMuted = isMutedRef.current;
+        const nextMuted = !currentlyMuted;
+        audioTracks.forEach(t => { t.enabled = !nextMuted; });
+        isMutedRef.current = nextMuted;
+        setIsMuted(nextMuted);
 
         if (socketRef.current && roomIdRef.current) {
             socketRef.current.emit('meeting-media-state', {
                 roomId: roomIdRef.current,
-                isMuted: currentlyEnabled,
-                isVideoOff,
+                isMuted: nextMuted,
+                isVideoOff: isVideoOffRef.current,
             });
         }
-    }, [isVideoOff]);
+    }, []);
 
     const toggleVideo = useCallback(async () => {
-        const stream = localStreamRef.current;
-        const videoTracks = stream?.getVideoTracks() || [];
+        const currentVideoOff = isVideoOffRef.current;
 
-        if (videoTracks.length === 0) {
-            if (typeof navigator !== 'undefined' && navigator?.mediaDevices?.getUserMedia) {
-                try {
-                    const newVideoStream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                    });
-                    const newVideoTrack = newVideoStream.getVideoTracks()[0];
-                    if (newVideoTrack) {
-                        const targetStream = stream || new MediaStream();
-                        targetStream.addTrack(newVideoTrack);
-                        localStreamRef.current = targetStream;
-                        setLocalStream(new MediaStream(targetStream.getTracks()));
-                        peerConnectionsRef.current.forEach(pc => {
-                            pc.addTrack(newVideoTrack, targetStream);
-                        });
-                        setIsVideoOff(false);
-                        if (socketRef.current && roomIdRef.current) {
-                            socketRef.current.emit('meeting-media-state', {
-                                roomId: roomIdRef.current,
-                                isMuted,
-                                isVideoOff: false,
-                            });
-                        }
-                    }
-                } catch (e) {
-                    setMediaWarning('Camera access denied.');
+        if (!currentVideoOff) {
+            const stream = localStreamRef.current;
+            const videoTracks = stream?.getVideoTracks() || [];
+            videoTracks.forEach(t => {
+                t.stop();
+                stream?.removeTrack(t);
+            });
+
+            for (const pc of peerConnectionsRef.current.values()) {
+                const videoTransceiver = pc.getTransceivers().find(t => t.receiver.track.kind === 'video');
+                if (videoTransceiver && videoTransceiver.sender) {
+                    videoTransceiver.sender.replaceTrack(null).catch(() => {});
                 }
+            }
+
+            isVideoOffRef.current = true;
+            setIsVideoOff(true);
+            if (localStreamRef.current) {
+                setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+            }
+
+            if (socketRef.current && roomIdRef.current) {
+                socketRef.current.emit('meeting-media-state', {
+                    roomId: roomIdRef.current,
+                    isMuted: isMutedRef.current,
+                    isVideoOff: true,
+                });
             }
             return;
         }
 
-        const currentlyEnabled = videoTracks[0].enabled;
-        videoTracks.forEach(t => { t.enabled = !currentlyEnabled; });
-        setIsVideoOff(currentlyEnabled);
+        if (typeof navigator !== 'undefined' && navigator?.mediaDevices?.getUserMedia) {
+            try {
+                const newVideoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                });
+                const newVideoTrack = newVideoStream.getVideoTracks()[0];
+                if (newVideoTrack) {
+                    const targetStream = localStreamRef.current || new MediaStream();
+                    targetStream.addTrack(newVideoTrack);
+                    localStreamRef.current = targetStream;
 
-        if (socketRef.current && roomIdRef.current) {
-            socketRef.current.emit('meeting-media-state', {
-                roomId: roomIdRef.current,
-                isMuted,
-                isVideoOff: currentlyEnabled,
-            });
+                    for (const pc of peerConnectionsRef.current.values()) {
+                        const videoTransceiver = pc.getTransceivers().find(t => t.receiver.track.kind === 'video');
+                        if (videoTransceiver && videoTransceiver.sender) {
+                            await videoTransceiver.sender.replaceTrack(newVideoTrack);
+                        } else {
+                            pc.addTrack(newVideoTrack, targetStream);
+                        }
+                    }
+
+                    isVideoOffRef.current = false;
+                    setIsVideoOff(false);
+                    setLocalStream(new MediaStream(targetStream.getTracks()));
+
+                    if (socketRef.current && roomIdRef.current) {
+                        socketRef.current.emit('meeting-media-state', {
+                            roomId: roomIdRef.current,
+                            isMuted: isMutedRef.current,
+                            isVideoOff: false,
+                        });
+                    }
+                }
+            } catch (e) {
+                setMediaWarning('Camera access denied.');
+            }
         }
-    }, [isMuted]);
+    }, []);
 
     const createRoom = useCallback(async (roomName: string, hostName: string, isPrivate = false) => {
         try {
@@ -418,8 +629,21 @@ export function useMeeting(): UseMeetingReturn {
         }
     }, []);
 
+    const getRoomInfo = useCallback(async (roomId: string) => {
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/meetings/${roomId}`);
+            const data = await response.json();
+            return data.success ? data.room : null;
+        } catch (err) {
+            console.error('Get room info error:', err);
+            return null;
+        }
+    }, []);
+
     useEffect(() => {
-        return () => { leaveMeeting(); };
+        return () => {
+            leaveMeeting();
+        };
     }, [leaveMeeting]);
 
     return {
@@ -428,14 +652,18 @@ export function useMeeting(): UseMeetingReturn {
         isMuted,
         isVideoOff,
         isConnected,
+        isHost,
         error,
         mediaWarning,
+        meetingEnded,
         setMediaWarning,
         joinMeeting,
         leaveMeeting,
+        endMeetingForAll,
         toggleMute,
         toggleVideo,
         createRoom,
         getActiveRooms,
+        getRoomInfo,
     };
 }
