@@ -133,7 +133,7 @@ export function useMeeting(): UseMeetingReturn {
                     socketRef.current.emit('meeting-offer', {
                         targetSocketId,
                         offer: pc.localDescription,
-                        fromSocketId: socketRef.current.id,
+                        fromSocketId: socketRef.current.id || '',
                         userName: userInfoRef.current?.userName || '',
                     });
                 }
@@ -162,7 +162,7 @@ export function useMeeting(): UseMeetingReturn {
                 socketRef.current.emit('meeting-ice-candidate', {
                     targetSocketId,
                     candidate: event.candidate,
-                    fromSocketId: socketRef.current.id,
+                    fromSocketId: socketRef.current.id || '',
                 });
             }
         };
@@ -319,7 +319,7 @@ export function useMeeting(): UseMeetingReturn {
             });
 
             socket.on('meeting-host-changed', ({ newHostSocketId }: { newHostSocketId: string; newHostName: string }) => {
-                const selfIsHost = newHostSocketId === socket.id;
+                const selfIsHost = !!socket.id && newHostSocketId === socket.id;
                 isHostRef.current = selfIsHost;
                 setIsHost(selfIsHost);
                 setParticipants(prev => prev.map(p => ({
@@ -357,7 +357,7 @@ export function useMeeting(): UseMeetingReturn {
 
             socket.on('meeting-offer', async ({ offer, fromSocketId, userName: fromName }: { offer: RTCSessionDescriptionInit; fromSocketId: string; userName: string }) => {
                 const pc = getOrCreatePeerConnection(fromSocketId);
-                const isPolite = socket.id < fromSocketId;
+                const isPolite = (socket.id || '') < fromSocketId;
                 const isMakingOffer = makingOfferMap.current.get(fromSocketId) || false;
                 const offerCollision = isMakingOffer || pc.signalingState !== 'stable';
 
@@ -379,7 +379,7 @@ export function useMeeting(): UseMeetingReturn {
                     socket.emit('meeting-answer', {
                         targetSocketId: fromSocketId,
                         answer: pc.localDescription,
-                        fromSocketId: socket.id,
+                        fromSocketId: socket.id || '',
                     });
                 } catch (err) {
                     console.error('Error handling meeting-offer:', err);
