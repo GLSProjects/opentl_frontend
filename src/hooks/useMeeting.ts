@@ -35,7 +35,7 @@ type UseMeetingReturn = {
     endMeetingForAll: () => void;
     toggleMute: () => Promise<void>;
     toggleVideo: () => Promise<void>;
-    createRoom: (roomName: string, isPrivate?: boolean, token?: string) => Promise<any>;
+    createRoom: (roomName: string, token?: string) => Promise<any>;
     getActiveRooms: () => Promise<any[]>;
     getRoomInfo: (roomId: string) => Promise<any>;
 };
@@ -606,7 +606,7 @@ export function useMeeting(): UseMeetingReturn {
         }
     }, []);
 
-    const createRoom = useCallback(async (roomName: string, isPrivate = false, token?: string) => {
+    const createRoom = useCallback(async (roomName: string, token?: string) => {
         try {
             const t = token || getStoredToken();
             const response = await fetch(`${BACKEND_URL}/api/meetings/create`, {
@@ -615,7 +615,7 @@ export function useMeeting(): UseMeetingReturn {
                     'Content-Type': 'application/json',
                     ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
                 },
-                body: JSON.stringify({ roomName, isPrivate }),
+                body: JSON.stringify({ roomName }),
             });
             const data = await response.json();
             if (response.ok && data.success) {

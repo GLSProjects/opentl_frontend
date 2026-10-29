@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Video, Users, Plus, Lock, Copy, Check } from "lucide-react";
+import { Video, Users, Plus, Copy, Check } from "lucide-react";
 import { useMeeting } from "@/hooks/useMeeting";
 import { useAuth } from "@/context/AuthContext";
 import AuthGate from "@/components/meeting/AuthGate";
@@ -20,12 +20,7 @@ function CreateMeetingContent() {
     const { user } = useAuth();
     const { createRoom, getActiveRooms } = useMeeting();
 
-    const [formData, setFormData] = useState({
-        roomName: "",
-        isPrivate: false,
-        maxParticipants: 10
-    });
-
+    const [roomName, setRoomName] = useState("");
     const [isCreating, setIsCreating] = useState(false);
     const [createdRoom, setCreatedRoom] = useState<any>(null);
     const [activeRooms, setActiveRooms] = useState<any[]>([]);
@@ -45,12 +40,12 @@ function CreateMeetingContent() {
     const handleCreateRoom = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!formData.roomName.trim()) {
+        if (!roomName.trim()) {
             return;
         }
 
         setIsCreating(true);
-        const room = await createRoom(formData.roomName, formData.isPrivate, user?.token);
+        const room = await createRoom(roomName, user?.token);
 
         if (room) {
             setCreatedRoom(room);
@@ -75,14 +70,6 @@ function CreateMeetingContent() {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         }
-    };
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value, type } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
-        }));
     };
 
     const hostName = user?.displayName || user?.username || "Host";
@@ -111,9 +98,8 @@ function CreateMeetingContent() {
                                         </label>
                                         <input
                                             type="text"
-                                            name="roomName"
-                                            value={formData.roomName}
-                                            onChange={handleInputChange}
+                                            value={roomName}
+                                            onChange={e => setRoomName(e.target.value)}
                                             placeholder="e.g., Team Standup, Project Review"
                                             className="w-full px-4 py-3 bg-[#1e1f22] border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
                                             required
@@ -135,40 +121,6 @@ function CreateMeetingContent() {
                                             <span className="text-sm font-semibold truncate">{hostName}</span>
                                             <span className="text-xs text-zinc-500 truncate">({user?.email})</span>
                                         </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-zinc-300 mb-2">
-                                            Max Participants
-                                        </label>
-                                        <select
-                                            name="maxParticipants"
-                                            value={formData.maxParticipants}
-                                            onChange={handleInputChange}
-                                            className="w-full px-4 py-3 bg-[#1e1f22] border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
-                                        >
-                                            <option value={5}>5 participants</option>
-                                            <option value={10}>10 participants</option>
-                                            <option value={25}>25 participants</option>
-                                            <option value={50}>50 participants</option>
-                                            <option value={100}>100 participants</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="flex items-center justify-between">
-                                        <label className="flex items-center gap-3 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                name="isPrivate"
-                                                checked={formData.isPrivate}
-                                                onChange={handleInputChange}
-                                                className="w-5 h-5 bg-[#1e1f22] border-zinc-700 rounded text-blue-500 focus:ring-blue-500"
-                                            />
-                                            <span className="text-zinc-300 flex items-center gap-2">
-                                                <Lock className="w-4 h-4" />
-                                                Private Meeting
-                                            </span>
-                                        </label>
                                     </div>
 
                                     <button
@@ -261,9 +213,6 @@ function CreateMeetingContent() {
                                                     <h3 className="text-white font-medium">{room.name}</h3>
                                                     <p className="text-zinc-500 text-sm">Host: {room.host}</p>
                                                 </div>
-                                                {room.isPrivate && (
-                                                    <Lock className="w-4 h-4 text-zinc-500" />
-                                                )}
                                             </div>
                                             <div className="flex items-center justify-between mt-4">
                                                 <span className="text-xs text-zinc-500">
