@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { PhoneOff, ArrowLeft } from "lucide-react";
+import { PhoneOff, ArrowLeft, Layers } from "lucide-react";
 
 type MeetingEndedProps = {
     endedBy?: string;
-    reason?: "HOST_ENDED" | "NOT_FOUND" | "ROOM_ENDED";
+    reason?: "HOST_ENDED" | "NOT_FOUND" | "ROOM_ENDED" | "REPLACED";
     onReturn: () => void;
 };
 
@@ -34,23 +34,27 @@ export default function MeetingEnded({
     const title =
         reason === "HOST_ENDED"
             ? `${endedBy || "The host"} ended the meeting`
+            : reason === "REPLACED"
+            ? "You joined from another tab"
             : "Meeting not found or ended";
 
     const subtitle =
         reason === "HOST_ENDED"
             ? `You will be redirected in ${secondsLeft} seconds...`
+            : reason === "REPLACED"
+            ? "This session was disconnected because you joined this meeting from another tab or window."
             : "This meeting link is invalid or the meeting has already concluded.";
 
     return (
         <div className="flex-1 flex items-center justify-center bg-[#1e1f22] p-6 text-white">
             <div className="w-full max-w-md bg-[#2b2d31] border border-zinc-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl animate-in zoom-in-95 duration-200">
                 <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center mx-auto border border-red-500/30">
-                    <PhoneOff className="w-8 h-8" />
+                    {reason === "REPLACED" ? <Layers className="w-8 h-8" /> : <PhoneOff className="w-8 h-8" />}
                 </div>
 
                 <div className="space-y-2">
                     <h2 className="text-2xl font-bold">{title}</h2>
-                    <p className="text-zinc-400 text-sm">{subtitle}</p>
+                    <p className="text-zinc-400 text-sm leading-relaxed">{subtitle}</p>
                 </div>
 
                 <button
@@ -64,4 +68,3 @@ export default function MeetingEnded({
         </div>
     );
 }
-

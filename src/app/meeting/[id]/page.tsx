@@ -1,18 +1,17 @@
 "use client";
 
 import React from "react";
-import { useRouter, useSearchParams, useParams } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Footer from "@/components/Footer";
 import DynamicMeetingArea from "@/components/DynamicMeetingArea";
+import AuthGate from "@/components/meeting/AuthGate";
 import { ArrowLeft } from "lucide-react";
 
 export default function MeetingPage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const params = useParams();
 
     const roomId = params.id as string;
-    const userName = searchParams.get('user') || undefined;
 
     const handleEnd = () => {
         router.push('/create-meeting');
@@ -40,14 +39,15 @@ export default function MeetingPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#1e1f22] flex flex-col">
-            <main className="flex-1 overflow-hidden flex">
-                <DynamicMeetingArea
-                    roomId={roomId}
-                    userName={userName}
-                    onEnd={handleEnd}
-                />
-            </main>
-        </div>
+        <AuthGate title="Sign in to join this meeting" description="You must be signed in with an OpenTL account to enter this meeting.">
+            <div className="min-h-screen bg-[#1e1f22] flex flex-col">
+                <main className="flex-1 overflow-hidden flex">
+                    <DynamicMeetingArea
+                        roomId={roomId}
+                        onEnd={handleEnd}
+                    />
+                </main>
+            </div>
+        </AuthGate>
     );
 }

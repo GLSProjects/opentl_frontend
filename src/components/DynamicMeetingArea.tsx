@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMeeting, Participant } from "@/hooks/useMeeting";
+import { useAuth } from "@/context/AuthContext";
 import PreJoinLobby from "@/components/meeting/PreJoinLobby";
 import ShareMeetingModal from "@/components/meeting/ShareMeetingModal";
 import ParticipantsPanel from "@/components/meeting/ParticipantsPanel";
@@ -24,6 +25,7 @@ type Toast = {
 };
 
 export default function DynamicMeetingArea({ roomId = "", userName: propUserName = "", onEnd }: MeetingAreaProps) {
+    const { user, logout } = useAuth();
     const {
         participants,
         localStream,
@@ -137,15 +139,14 @@ export default function DynamicMeetingArea({ roomId = "", userName: propUserName
     ) => {
         if (!roomId || joining) return;
         setJoining(true);
-        setCurrentUserName(name);
+        const resolvedName = user?.displayName || user?.username || name;
+        setCurrentUserName(resolvedName);
 
         await joinMeeting(
             roomId,
-            `user-${Date.now()}`,
-            name,
-            "",
             { isMuted: initialMuted, isVideoOff: initialVideoOff },
-            stream
+            stream,
+            user?.token
         );
 
         setHasJoined(true);
@@ -178,6 +179,36 @@ export default function DynamicMeetingArea({ roomId = "", userName: propUserName
         return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
     };
 
+    if (error === "UNAUTHORIZED") {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-[#1e1f22] p-4">
+                <div className="w-full max-w-md bg-[#2b2d31] border border-zinc-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
+                    <div className="w-16 h-16 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto border border-red-500/30">
+                        <ShieldAlert className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-2">
+                        <h2 className="text-2xl font-bold text-white">Login required</h2>
+                        <p className="text-zinc-400 text-sm">Your session has expired or you are not signed in. Please log in to continue.</p>
+                    </div>
+                    <button
+                        onClick={() => {
+                            logout();
+                            const path = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/";
+                            window.location.href = `/signin?callback=${encodeURIComponent(path)}`;
+                        }}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition"
+                    >
+                        Sign in again
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (error === "REPLACED") {
+        return <MeetingEnded reason="REPLACED" onReturn={onEnd} />;
+    }
+
     if (meetingEnded) {
         return (
             <MeetingEnded
@@ -201,7 +232,6 @@ export default function DynamicMeetingArea({ roomId = "", userName: propUserName
             <PreJoinLobby
                 roomId={roomId}
                 roomName={roomName}
-                initialName={propUserName}
                 onJoin={handleLobbyJoin}
                 isJoining={joining}
             />
@@ -211,7 +241,7 @@ export default function DynamicMeetingArea({ roomId = "", userName: propUserName
     const allTiles = [
         {
             socketId: "local",
-            userName: currentUserName || "You",
+            userName: user?.displayName || user?.username || currentUserName || "You",
             isLocal: true,
             isMuted,
             isVideoOff,
@@ -308,7 +338,7 @@ export default function DynamicMeetingArea({ roomId = "", userName: propUserName
                 <ParticipantsPanel
                     isOpen={isParticipantsOpen}
                     onClose={() => setIsParticipantsOpen(false)}
-                    localUserName={currentUserName}
+                    localUserName={user?.displayName || user?.username || currentUserName || "You"}
                     isLocalMuted={isMuted}
                     isLocalVideoOff={isVideoOff}
                     isLocalHost={isHost}

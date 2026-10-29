@@ -2,31 +2,38 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { Video, Users, Shield, Plus, Lock, Globe, Clock, Copy, Check } from "lucide-react";
+import { Video, Users, Plus, Lock, Copy, Check } from "lucide-react";
 import { useMeeting } from "@/hooks/useMeeting";
+import { useAuth } from "@/context/AuthContext";
+import AuthGate from "@/components/meeting/AuthGate";
 
 export default function CreateMeetingPage() {
+    return (
+        <AuthGate title="Sign in to create a meeting" description="You must be signed in with an OpenTL account to start a new meeting.">
+            <CreateMeetingContent />
+        </AuthGate>
+    );
+}
+
+function CreateMeetingContent() {
     const router = useRouter();
+    const { user } = useAuth();
     const { createRoom, getActiveRooms } = useMeeting();
-    
+
     const [formData, setFormData] = useState({
         roomName: "",
-        hostName: "",
         isPrivate: false,
         maxParticipants: 10
     });
-    
+
     const [isCreating, setIsCreating] = useState(false);
     const [createdRoom, setCreatedRoom] = useState<any>(null);
     const [activeRooms, setActiveRooms] = useState<any[]>([]);
     const [copied, setCopied] = useState(false);
 
-    // Load active rooms
     useEffect(() => {
         loadActiveRooms();
-        const interval = setInterval(loadActiveRooms, 10000); // Update every 10 seconds
+        const interval = setInterval(loadActiveRooms, 10000);
         return () => clearInterval(interval);
     }, []);
 
@@ -37,31 +44,28 @@ export default function CreateMeetingPage() {
 
     const handleCreateRoom = async (e: React.FormEvent) => {
         e.preventDefault();
-        
-        if (!formData.roomName.trim() || !formData.hostName.trim()) {
+
+        if (!formData.roomName.trim()) {
             return;
         }
 
         setIsCreating(true);
-        const room = await createRoom(formData.roomName, formData.hostName, formData.isPrivate);
-        
+        const room = await createRoom(formData.roomName, formData.isPrivate, user?.token);
+
         if (room) {
             setCreatedRoom(room);
             if (typeof window !== 'undefined' && room.hostToken) {
                 sessionStorage.setItem(`meeting-host-${room.id}`, room.hostToken);
             }
-            router.push(`/meeting/${room.id}?user=${encodeURIComponent(formData.hostName)}`);
+            router.push(`/meeting/${room.id}`);
             return;
         }
-        
+
         setIsCreating(false);
     };
 
     const handleJoinRoom = (roomId: string) => {
-        if (createdRoom && createdRoom.id === roomId && createdRoom.hostToken && typeof window !== 'undefined') {
-            sessionStorage.setItem(`meeting-host-${roomId}`, createdRoom.hostToken);
-        }
-        router.push(`/meeting/${roomId}?user=${encodeURIComponent(formData.hostName || 'Guest')}`);
+        router.push(`/meeting/${roomId}`);
     };
 
     const copyMeetingLink = () => {
@@ -81,10 +85,10 @@ export default function CreateMeetingPage() {
         }));
     };
 
+    const hostName = user?.displayName || user?.username || "Host";
+
     return (
         <div className="min-h-screen bg-[#1e1f22] flex flex-col">
-            {/* <Navbar /> */}
-            
             <main className="flex-1 p-8">
                 <div className="max-w-6xl mx-auto">
                     <div className="text-center mb-12">
@@ -93,7 +97,6 @@ export default function CreateMeetingPage() {
                     </div>
 
                     <div className="grid lg:grid-cols-2 gap-8">
-                        {/* Create Meeting Form */}
                         <div className="bg-[#2b2d31] rounded-3xl p-8 border border-zinc-800">
                             <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
                                 <Plus className="w-6 h-6 text-blue-500" />
@@ -119,17 +122,19 @@ export default function CreateMeetingPage() {
 
                                     <div>
                                         <label className="block text-sm font-medium text-zinc-300 mb-2">
-                                            Your Name
+                                            Host
                                         </label>
-                                        <input
-                                            type="text"
-                                            name="hostName"
-                                            value={formData.hostName}
-                                            onChange={handleInputChange}
-                                            placeholder="Enter your name"
-                                            className="w-full px-4 py-3 bg-[#1e1f22] border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-                                            required
-                                        />
+                                        <div className="flex items-center gap-3 px-4 py-3 bg-[#1e1f22] border border-zinc-700 rounded-lg text-white">
+                                            {user?.avatar ? (
+                                                <img src={user.avatar} alt="Host Avatar" className="w-7 h-7 rounded-full object-cover" />
+                                            ) : (
+                                                <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
+                                                    {hostName.charAt(0).toUpperCase()}
+                                                </div>
+                                            )}
+                                            <span className="text-sm font-semibold truncate">{hostName}</span>
+                                            <span className="text-xs text-zinc-500 truncate">({user?.email})</span>
+                                        </div>
                                     </div>
 
                                     <div>
@@ -193,7 +198,7 @@ export default function CreateMeetingPage() {
                                         <h3 className="text-xl font-bold text-white mb-2">Meeting Created!</h3>
                                         <p className="text-zinc-400">{createdRoom.name}</p>
                                     </div>
-                                    
+
                                     <div className="bg-[#1e1f22] p-4 rounded-lg border border-zinc-700">
                                         <p className="text-sm text-zinc-500 mb-2">Meeting Link:</p>
                                         <div className="flex items-center gap-2">
@@ -230,7 +235,6 @@ export default function CreateMeetingPage() {
                             )}
                         </div>
 
-                        {/* Active Meetings */}
                         <div className="bg-[#2b2d31] rounded-3xl p-8 border border-zinc-800">
                             <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
                                 <Users className="w-6 h-6 text-green-500" />
@@ -261,23 +265,13 @@ export default function CreateMeetingPage() {
                                                     <Lock className="w-4 h-4 text-zinc-500" />
                                                 )}
                                             </div>
-                                            
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-4 text-sm text-zinc-400">
-                                                    <span className="flex items-center gap-1">
-                                                        <Users className="w-3 h-3" />
-                                                        {room.participantCount}/{room.maxParticipants}
-                                                    </span>
-                                                    <span className="flex items-center gap-1">
-                                                        <Clock className="w-3 h-3" />
-                                                        {new Date(room.createdAt).toLocaleTimeString()}
-                                                    </span>
-                                                </div>
-                                                
+                                            <div className="flex items-center justify-between mt-4">
+                                                <span className="text-xs text-zinc-500">
+                                                    {room.participantCount} participant{room.participantCount !== 1 ? 's' : ''}
+                                                </span>
                                                 <button
                                                     onClick={() => handleJoinRoom(room.id)}
-                                                    disabled={room.participantCount >= room.maxParticipants}
-                                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition"
+                                                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition"
                                                 >
                                                     Join
                                                 </button>
@@ -288,37 +282,8 @@ export default function CreateMeetingPage() {
                             )}
                         </div>
                     </div>
-
-                    {/* Features */}
-                    <div className="mt-12 grid md:grid-cols-3 gap-6">
-                        <div className="bg-[#2b2d31] p-6 rounded-2xl border border-zinc-800">
-                            <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mb-4">
-                                <Shield className="w-6 h-6 text-white" />
-                            </div>
-                            <h3 className="text-white font-bold mb-2">Secure & Private</h3>
-                            <p className="text-zinc-400 text-sm">End-to-end encryption and optional password protection for your meetings.</p>
-                        </div>
-                        
-                        <div className="bg-[#2b2d31] p-6 rounded-2xl border border-zinc-800">
-                            <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center mb-4">
-                                <Users className="w-6 h-6 text-white" />
-                            </div>
-                            <h3 className="text-white font-bold mb-2">Up to 100 Participants</h3>
-                            <p className="text-zinc-400 text-sm">Support for large team meetings with high-quality video and audio.</p>
-                        </div>
-                        
-                        <div className="bg-[#2b2d31] p-6 rounded-2xl border border-zinc-800">
-                            <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center mb-4">
-                                <Globe className="w-6 h-6 text-white" />
-                            </div>
-                            <h3 className="text-white font-bold mb-2">Global Access</h3>
-                            <p className="text-zinc-400 text-sm">Join from anywhere in the world with reliable connection quality.</p>
-                        </div>
-                    </div>
                 </div>
             </main>
-            
-            <Footer />
         </div>
     );
 }

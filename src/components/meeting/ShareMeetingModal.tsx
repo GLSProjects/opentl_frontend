@@ -125,6 +125,7 @@ export default function ShareMeetingModal({
                             )}
                         </button>
                     </div>
+                    <p className="text-[11px] text-zinc-400">People need to sign in to join.</p>
                 </div>
 
                 <div className="flex items-center justify-around pt-2 border-t border-zinc-700/60">

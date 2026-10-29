@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Mic, MicOff, Video, VideoOff, Loader2 } from "lucide-react";
+import { Mic, MicOff, Video, VideoOff, Loader2, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
 
 type PreJoinLobbyProps = {
     roomId: string;
     roomName?: string;
-    initialName?: string;
     onJoin: (name: string, stream: MediaStream | null, isMuted: boolean, isVideoOff: boolean) => void;
     isJoining: boolean;
 };
@@ -15,11 +15,11 @@ type PreJoinLobbyProps = {
 export default function PreJoinLobby({
     roomId,
     roomName,
-    initialName = "",
     onJoin,
     isJoining
 }: PreJoinLobbyProps) {
-    const [name, setName] = useState(initialName);
+    const { user, logout } = useAuth();
+    const displayName = user?.displayName || user?.username || "User";
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -126,13 +126,14 @@ export default function PreJoinLobby({
         }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!name.trim() || isJoining) return;
-        onJoin(name.trim(), streamRef.current, isMuted, isVideoOff);
+    const handleJoinClick = () => {
+        if (isJoining) return;
+        onJoin(displayName, streamRef.current, isMuted, isVideoOff);
     };
 
-    const initials = name ? name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2) : "U";
+    const initials = displayName
+        ? displayName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2)
+        : "U";
 
     return (
         <div className="flex-1 flex items-center justify-center bg-[#1e1f22] p-4 sm:p-8">
@@ -191,40 +192,53 @@ export default function PreJoinLobby({
                         </p>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div>
-                            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">
-                                Your Display Name
-                            </label>
-                            <input
-                                type="text"
-                                value={name}
-                                onChange={e => setName(e.target.value)}
-                                placeholder="Enter your name"
-                                className="w-full bg-[#1e1f22] border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition"
-                                required
-                                autoFocus
+                    <div className="bg-[#1e1f22] p-4 rounded-2xl border border-zinc-700/80 flex items-center gap-3.5">
+                        {user?.avatar ? (
+                            <img
+                                src={user.avatar}
+                                alt={displayName}
+                                className="w-12 h-12 rounded-full object-cover border border-zinc-600"
                             />
+                        ) : (
+                            <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-lg font-bold text-white shrink-0">
+                                {initials}
+                            </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                            <p className="text-xs text-zinc-400 font-medium">Joining as</p>
+                            <p className="text-base font-bold text-white truncate">{displayName}</p>
+                            <p className="text-xs text-zinc-500 truncate">{user?.email}</p>
                         </div>
+                    </div>
 
+                    <button
+                        type="button"
+                        onClick={handleJoinClick}
+                        disabled={isJoining}
+                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-98"
+                    >
+                        {isJoining ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                Joining meeting...
+                            </>
+                        ) : (
+                            "Join now"
+                        )}
+                    </button>
+
+                    <div className="text-center pt-1">
                         <button
-                            type="submit"
-                            disabled={!name.trim() || isJoining}
-                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-98"
+                            type="button"
+                            onClick={() => logout()}
+                            className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition"
                         >
-                            {isJoining ? (
-                                <>
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                    Joining meeting...
-                                </>
-                            ) : (
-                                "Join now"
-                            )}
+                            <LogOut className="w-3.5 h-3.5" />
+                            <span>Not you? Switch account</span>
                         </button>
-                    </form>
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
-

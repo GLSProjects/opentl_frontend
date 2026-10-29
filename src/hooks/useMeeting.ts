@@ -26,23 +26,33 @@ type UseMeetingReturn = {
     meetingEnded: { endedBy: string } | null;
     setMediaWarning: (warning: string | null) => void;
     joinMeeting: (
-        roomId: string, 
-        userId: string, 
-        userName: string, 
-        avatar?: string, 
-        initialMedia?: { isMuted: boolean; isVideoOff: boolean }, 
-        existingStream?: MediaStream | null
+        roomId: string,
+        initialMedia?: { isMuted: boolean; isVideoOff: boolean },
+        existingStream?: MediaStream | null,
+        token?: string
     ) => Promise<void>;
     leaveMeeting: () => void;
     endMeetingForAll: () => void;
     toggleMute: () => Promise<void>;
     toggleVideo: () => Promise<void>;
-    createRoom: (roomName: string, hostName: string, isPrivate?: boolean) => Promise<any>;
+    createRoom: (roomName: string, isPrivate?: boolean, token?: string) => Promise<any>;
     getActiveRooms: () => Promise<any[]>;
     getRoomInfo: (roomId: string) => Promise<any>;
 };
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://opentl-backend-hj2y.onrender.com';
+
+const getStoredToken = (): string | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+        const stored = localStorage.getItem('user');
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            return parsed.token || null;
+        }
+    } catch (e) {}
+    return null;
+};
 
 const getRtcConfig = (): RTCConfiguration => {
     const iceServers: RTCIceServer[] = [
@@ -88,7 +98,6 @@ export function useMeeting(): UseMeetingReturn {
     const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
     const localStreamRef = useRef<MediaStream | null>(null);
     const roomIdRef = useRef<string | null>(null);
-    const userInfoRef = useRef<{ userId: string; userName: string; avatar: string } | null>(null);
     const isMutedRef = useRef(false);
     const isVideoOffRef = useRef(false);
     const isHostRef = useRef(false);
@@ -133,8 +142,6 @@ export function useMeeting(): UseMeetingReturn {
                     socketRef.current.emit('meeting-offer', {
                         targetSocketId,
                         offer: pc.localDescription,
-                        fromSocketId: socketRef.current.id || '',
-                        userName: userInfoRef.current?.userName || '',
                     });
                 }
             } catch (err) {
@@ -162,7 +169,6 @@ export function useMeeting(): UseMeetingReturn {
                 socketRef.current.emit('meeting-ice-candidate', {
                     targetSocketId,
                     candidate: event.candidate,
-                    fromSocketId: socketRef.current.id || '',
                 });
             }
         };
@@ -178,23 +184,52 @@ export function useMeeting(): UseMeetingReturn {
         return pc;
     }, []);
 
+    const leaveMeeting = useCallback(() => {
+        joinLockRef.current = false;
+        if (socketRef.current && roomIdRef.current) {
+            socketRef.current.emit('meeting-leave', { roomId: roomIdRef.current });
+            socketRef.current.disconnect();
+            socketRef.current = null;
+        }
+        peerConnectionsRef.current.forEach(pc => pc.close());
+        peerConnectionsRef.current.clear();
+        iceCandidateQueue.current.clear();
+        remoteStreamsRef.current.clear();
+        makingOfferMap.current.clear();
+
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(t => t.stop());
+            localStreamRef.current = null;
+        }
+        setLocalStream(null);
+        setParticipants([]);
+        setIsConnected(false);
+        setIsHost(false);
+        isHostRef.current = false;
+        roomIdRef.current = null;
+    }, []);
+
     const joinMeeting = useCallback(async (
-        roomId: string, 
-        userId: string, 
-        userName: string, 
-        avatar = '', 
+        roomId: string,
         initialMedia = { isMuted: false, isVideoOff: false },
-        existingStream: MediaStream | null = null
+        existingStream: MediaStream | null = null,
+        token?: string
     ) => {
         if (joinLockRef.current && roomIdRef.current === roomId) {
             return;
         }
+
+        const authToken = token || getStoredToken();
+        if (!authToken) {
+            setError('UNAUTHORIZED');
+            return;
+        }
+
         joinLockRef.current = true;
         setError(null);
         setMeetingEnded(null);
         setMediaWarning(null);
         roomIdRef.current = roomId;
-        userInfoRef.current = { userId, userName, avatar };
 
         isMutedRef.current = initialMedia.isMuted;
         isVideoOffRef.current = initialMedia.isVideoOff;
@@ -271,13 +306,9 @@ export function useMeeting(): UseMeetingReturn {
         localStreamRef.current = stream;
         setLocalStream(stream ? new MediaStream(stream.getTracks()) : null);
 
-        let hostToken: string | null = null;
-        if (typeof window !== 'undefined') {
-            hostToken = sessionStorage.getItem(`meeting-host-${roomId}`);
-        }
-
         try {
             const socket = io(BACKEND_URL, { 
+                auth: { token: authToken },
                 transports: ['websocket', 'polling'],
                 reconnection: true,
                 reconnectionAttempts: 5,
@@ -289,12 +320,9 @@ export function useMeeting(): UseMeetingReturn {
                 setIsConnected(true);
                 socket.emit('meeting-join', {
                     roomId,
-                    userId,
-                    userName,
-                    avatar,
                     isMuted: isMutedRef.current,
                     isVideoOff: isVideoOffRef.current,
-                    hostToken,
+                    token: authToken,
                 });
             });
 
@@ -304,18 +332,22 @@ export function useMeeting(): UseMeetingReturn {
             });
 
             socket.on('meeting-error', ({ code, message }: { code: string; message: string }) => {
+                if (code === 'UNAUTHORIZED') {
+                    leaveMeeting();
+                    setError('UNAUTHORIZED');
+                    return;
+                }
+                if (code === 'REPLACED') {
+                    leaveMeeting();
+                    setError('REPLACED');
+                    return;
+                }
                 setError(code === 'ROOM_NOT_FOUND' ? 'ROOM_NOT_FOUND' : (code === 'ROOM_ENDED' ? 'ROOM_ENDED' : message));
             });
 
             socket.on('meeting-ended', ({ endedBy }: { roomId: string; endedBy: string }) => {
                 setMeetingEnded({ endedBy: endedBy || 'Host' });
-                if (localStreamRef.current) {
-                    localStreamRef.current.getTracks().forEach(t => t.stop());
-                }
-                peerConnectionsRef.current.forEach(pc => pc.close());
-                peerConnectionsRef.current.clear();
-                socket.disconnect();
-                setIsConnected(false);
+                leaveMeeting();
             });
 
             socket.on('meeting-host-changed', ({ newHostSocketId }: { newHostSocketId: string; newHostName: string }) => {
@@ -379,7 +411,6 @@ export function useMeeting(): UseMeetingReturn {
                     socket.emit('meeting-answer', {
                         targetSocketId: fromSocketId,
                         answer: pc.localDescription,
-                        fromSocketId: socket.id || '',
                     });
                 } catch (err) {
                     console.error('Error handling meeting-offer:', err);
@@ -437,32 +468,7 @@ export function useMeeting(): UseMeetingReturn {
             setError(msg);
             console.error('Meeting join error:', err);
         }
-    }, [getOrCreatePeerConnection]);
-
-    const leaveMeeting = useCallback(() => {
-        joinLockRef.current = false;
-        if (socketRef.current && roomIdRef.current) {
-            socketRef.current.emit('meeting-leave', { roomId: roomIdRef.current });
-            socketRef.current.disconnect();
-            socketRef.current = null;
-        }
-        peerConnectionsRef.current.forEach(pc => pc.close());
-        peerConnectionsRef.current.clear();
-        iceCandidateQueue.current.clear();
-        remoteStreamsRef.current.clear();
-        makingOfferMap.current.clear();
-
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(t => t.stop());
-            localStreamRef.current = null;
-        }
-        setLocalStream(null);
-        setParticipants([]);
-        setIsConnected(false);
-        setIsHost(false);
-        isHostRef.current = false;
-        roomIdRef.current = null;
-    }, []);
+    }, [getOrCreatePeerConnection, leaveMeeting]);
 
     const endMeetingForAll = useCallback(() => {
         if (socketRef.current && roomIdRef.current) {
@@ -600,16 +606,23 @@ export function useMeeting(): UseMeetingReturn {
         }
     }, []);
 
-    const createRoom = useCallback(async (roomName: string, hostName: string, isPrivate = false) => {
+    const createRoom = useCallback(async (roomName: string, isPrivate = false, token?: string) => {
         try {
+            const t = token || getStoredToken();
             const response = await fetch(`${BACKEND_URL}/api/meetings/create`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomName, hostName, isPrivate }),
+                headers: { 
+                    'Content-Type': 'application/json',
+                    ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                },
+                body: JSON.stringify({ roomName, isPrivate }),
             });
             const data = await response.json();
-            if (data.success) {
+            if (response.ok && data.success) {
                 return data.room;
+            }
+            if (response.status === 401) {
+                setError('UNAUTHORIZED');
             }
             return null;
         } catch (err) {
@@ -620,7 +633,12 @@ export function useMeeting(): UseMeetingReturn {
 
     const getActiveRooms = useCallback(async () => {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/meetings`);
+            const t = getStoredToken();
+            const response = await fetch(`${BACKEND_URL}/api/meetings`, {
+                headers: {
+                    ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                },
+            });
             const data = await response.json();
             return data.success ? data.rooms : [];
         } catch (err) {
@@ -631,7 +649,12 @@ export function useMeeting(): UseMeetingReturn {
 
     const getRoomInfo = useCallback(async (roomId: string) => {
         try {
-            const response = await fetch(`${BACKEND_URL}/api/meetings/${roomId}`);
+            const t = getStoredToken();
+            const response = await fetch(`${BACKEND_URL}/api/meetings/${roomId}`, {
+                headers: {
+                    ...(t ? { 'Authorization': `Bearer ${t}` } : {}),
+                },
+            });
             const data = await response.json();
             return data.success ? data.room : null;
         } catch (err) {
@@ -639,6 +662,17 @@ export function useMeeting(): UseMeetingReturn {
             return null;
         }
     }, []);
+
+    useEffect(() => {
+        const handleStorage = (e: StorageEvent) => {
+            if (e.key === 'user' && !e.newValue) {
+                leaveMeeting();
+                setError('UNAUTHORIZED');
+            }
+        };
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
+    }, [leaveMeeting]);
 
     useEffect(() => {
         return () => {
